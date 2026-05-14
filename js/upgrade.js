@@ -1,71 +1,59 @@
 /**
- * ShushaCase - Система апгрейда
+ * ShushaCase - Система апгрейда v3.0
  * 
- * Механика "колеса фортуны":
- * - Игрок выбирает до 6 предметов слева (жертвует)
- * - Выбирает 1 желаемый предмет справа
- * - Шанс успеха = (сумма левых / цена правого) * 0.9 (макс 95%)
- * - Стрелка крутится 4+ секунд, останавливается на красном/зелёном
+ * Полностью переписан:
+ * - Красная зона всегда видна
+ * - Плавная анимация без рывков
+ * - Поддержка кастомной PNG-стрелки
+ * - Колесо фортуны с правильным отображением шанса
  */
 
-// ===== ДЛИНА ОКРУЖНОСТИ =====
-const CIRCUMFERENCE = 2 * Math.PI * 90; // Радиус круга = 90
+const CIRCUMFERENCE = 2 * Math.PI * 90; // Длина окружности (радиус 90)
+const ARROW_IMAGE = 'arrow.png'; // Твой PNG файл со стрелкой
 
-// ===== РЕНДЕР СТРАНИЦЫ АПГРЕЙДА =====
+// ===== РЕНДЕР СТРАНИЦЫ =====
 
-/**
- * Отрисовывает страницу апгрейда
- */
 function renderUpgradePage() {
     const container = DOM.contentUpgrade;
     if (!container) return;
     
     container.innerHTML = '';
     
-    // Основной контейнер
     const upgradeWrap = createElement('div', { className: 'upgrade-wrap' });
     
-    // Левая панель (слоты для жертвы)
+    // Левая панель (6 слотов)
     const leftPanel = createElement('div', { 
-        className: 'upgrade-left',
-        id: 'upgradeLeftPanel'
+        className: 'upgrade-left', 
+        id: 'upgradeLeftPanel' 
     });
     
-    // Создаём 6 слотов
     for (let i = 0; i < 6; i++) {
         const slot = createUpgradeSlot(i);
         leftPanel.appendChild(slot);
     }
     
-    // Центр (колесо фортуны)
+    // Центральная панель (колесо + кнопка)
     const centerPanel = createUpgradeCenter();
     
-    // Правая панель (желаемый предмет)
-    const rightPanel = createElement('div', {
+    // Правый слот (желаемый предмет)
+    const rightSlot = createElement('div', {
         className: 'upg-right-slot',
         id: 'upgradeRightSlot',
         onClick: () => onRightSlotClick()
     }, createElement('span', {}, '+'));
     
-    upgradeWrap.append(leftPanel, centerPanel, rightPanel);
+    upgradeWrap.append(leftPanel, centerPanel, rightSlot);
     container.appendChild(upgradeWrap);
     
-    // Кешируем DOM-элементы
-    DOM.upgradeLeftSlots = $('#upgradeLeftPanel');
-    DOM.upgradeRightSlot = $('#upgradeRightSlot');
-    DOM.upgradeStartBtn = $('#upgradeStartBtn');
-    DOM.chanceArrow = $('#chanceArrow');
-    DOM.chanceText = $('#chanceText');
-    DOM.chanceRed = $('#chanceRed');
-    DOM.chanceGreen = $('#chanceGreen');
+    // Кешируем DOM элементы
+    cacheUpgradeDOM();
     
-    // Обновляем состояние слотов
+    // Обновляем отображение
     updateUpgradeSlots();
 }
 
-/**
- * Создаёт слот апгрейда
- */
+// ===== СОЗДАНИЕ ЭЛЕМЕНТОВ =====
+
 function createUpgradeSlot(index) {
     const slotData = gameState.upgradeSlots.left[index];
     
@@ -77,10 +65,14 @@ function createUpgradeSlot(index) {
     if (slotData) {
         const skin = getSkinById(slotData.skinId);
         if (skin) {
-            slot.innerHTML = '';
+            // Показываем картинку или эмодзи
+            if (skin.imageUrl) {
+                slot.innerHTML = `<img src="${skin.imageUrl}" style="width:35px;height:35px;border-radius:4px;" alt="${skin.name}">`;
+            } else {
+                slot.innerHTML = `<span style="font-size:1.5rem;">${skin.emoji || '🎨'}</span>`;
+            }
             
-            const emoji = createElement('span', {}, skin.emoji || '🎨');
-            
+            // Кнопка удаления
             const removeBtn = createElement('span', {
                 className: 'upg-slot__remove',
                 onClick: (e) => {
@@ -89,55 +81,96 @@ function createUpgradeSlot(index) {
                 }
             }, '✕');
             
-            slot.append(emoji, removeBtn);
-            slot.title = `${skin.name} — ${formatPrice(skin.price)} ₽`;
+            slot.appendChild(removeBtn);
+            slot.title = `${skin.name}\n${formatPrice(skin.price)} ₽`;
         }
     } else {
         slot.innerHTML = '<span>+</span>';
-        slot.title = 'Выбрать предмет';
+        slot.title = 'Нажмите, чтобы выбрать предмет';
     }
     
     return slot;
 }
 
-/**
- * Создаёт центральную панель с колесом
- */
 function createUpgradeCenter() {
     const centerPanel = createElement('div', { className: 'upgrade-center' });
     
-    // Колесо фортуны
-    const circleContainer = createElement('div', { className: 'chance-circle' });
+    // === КОЛЕСО ФОРТУНЫ ===
+    const circleContainer = createElement('div', { 
+        className: 'chance-circle',
+        style: 'position:relative;'
+    });
     
-    // SVG круг
-    const svg = `
-        <svg class="chance-circle-svg" viewBox="0 0 200 200">
-            <circle class="chance-bg" cx="100" cy="100" r="90"/>
-            <circle class="chance-red" id="chanceRed" cx="100" cy="100" r="90" 
-                stroke-dasharray="0 ${CIRCUMFERENCE}" stroke-dashoffset="0"/>
-            <circle class="chance-green" id="chanceGreen" cx="100" cy="100" r="90" 
-                stroke-dasharray="0 ${CIRCUMFERENCE}" stroke-dashoffset="0"/>
-        </svg>
-    `;
+    // SVG с кругами
+    const svgNS = 'http://www.w3.org/2000/svg';
+    const svg = document.createElementNS(svgNS, 'svg');
+    svg.setAttribute('class', 'chance-circle-svg');
+    svg.setAttribute('viewBox', '0 0 200 200');
+    svg.setAttribute('width', '200');
+    svg.setAttribute('height', '200');
     
-    // Стрелка
-    const arrow = createElement('div', { 
-        className: 'chance-arrow',
-        id: 'chanceArrow'
-    },
-        createElement('div', { className: 'chance-arrow__tip' })
-    );
+    // Фоновый круг
+    const bgCircle = document.createElementNS(svgNS, 'circle');
+    bgCircle.setAttribute('class', 'chance-bg');
+    bgCircle.setAttribute('cx', '100');
+    bgCircle.setAttribute('cy', '100');
+    bgCircle.setAttribute('r', '90');
+    svg.appendChild(bgCircle);
     
-    // Текст процента
-    const text = createElement('div', {
+    // Красный сектор (зона провала)
+    const redCircle = document.createElementNS(svgNS, 'circle');
+    redCircle.setAttribute('class', 'chance-red');
+    redCircle.setAttribute('id', 'chanceRed');
+    redCircle.setAttribute('cx', '100');
+    redCircle.setAttribute('cy', '100');
+    redCircle.setAttribute('r', '90');
+    redCircle.setAttribute('stroke-dasharray', `0 ${CIRCUMFERENCE}`);
+    redCircle.setAttribute('stroke-dashoffset', '0');
+    svg.appendChild(redCircle);
+    
+    // Зелёный сектор (зона успеха)
+    const greenCircle = document.createElementNS(svgNS, 'circle');
+    greenCircle.setAttribute('class', 'chance-green');
+    greenCircle.setAttribute('id', 'chanceGreen');
+    greenCircle.setAttribute('cx', '100');
+    greenCircle.setAttribute('cy', '100');
+    greenCircle.setAttribute('r', '90');
+    greenCircle.setAttribute('stroke-dasharray', `0 ${CIRCUMFERENCE}`);
+    greenCircle.setAttribute('stroke-dashoffset', '0');
+    svg.appendChild(greenCircle);
+    
+    circleContainer.appendChild(svg);
+    
+    // Стрелка (PNG изображение)
+    const arrowImg = createElement('img', {
+        src: ARROW_IMAGE,
+        className: 'chance-arrow-png',
+        id: 'chanceArrow',
+        alt: 'Стрелка',
+        onerror: function() {
+            // Fallback: если PNG не загрузился, показываем CSS-стрелку
+            this.style.display = 'none';
+            const fallbackArrow = document.getElementById('chanceArrowFallback');
+            if (fallbackArrow) fallbackArrow.style.display = 'block';
+        }
+    });
+    
+    // Fallback стрелка (CSS)
+    const fallbackArrow = createElement('div', {
+        className: 'chance-arrow-fallback',
+        id: 'chanceArrowFallback',
+        style: 'display:none;'
+    }, createElement('div', { className: 'chance-arrow__tip' }));
+    
+    // Текст с процентом
+    const chanceText = createElement('div', {
         className: 'chance-text',
         id: 'chanceText'
     }, '—%');
     
-    circleContainer.innerHTML = svg;
-    circleContainer.append(arrow, text);
+    circleContainer.append(arrowImg, fallbackArrow, chanceText);
     
-    // Кнопка запуска
+    // === КНОПКА ЗАПУСКА ===
     const startButton = createElement('button', {
         className: 'upgrade-start-btn',
         id: 'upgradeStartBtn',
@@ -150,22 +183,31 @@ function createUpgradeCenter() {
     return centerPanel;
 }
 
+// ===== КЕШИРОВАНИЕ DOM =====
+
+function cacheUpgradeDOM() {
+    DOM.upgradeLeftSlots = document.getElementById('upgradeLeftPanel');
+    DOM.upgradeRightSlot = document.getElementById('upgradeRightSlot');
+    DOM.upgradeStartBtn = document.getElementById('upgradeStartBtn');
+    DOM.chanceArrow = document.getElementById('chanceArrow');
+    DOM.chanceArrowFallback = document.getElementById('chanceArrowFallback');
+    DOM.chanceText = document.getElementById('chanceText');
+    DOM.chanceRed = document.getElementById('chanceRed');
+    DOM.chanceGreen = document.getElementById('chanceGreen');
+}
+
 // ===== УПРАВЛЕНИЕ СЛОТАМИ =====
 
-/**
- * Обновляет все слоты и шанс
- */
 function updateUpgradeSlots() {
-    // Обновляем левые слоты
+    // Левые слоты
     if (DOM.upgradeLeftSlots) {
         DOM.upgradeLeftSlots.innerHTML = '';
         for (let i = 0; i < 6; i++) {
-            const slot = createUpgradeSlot(i);
-            DOM.upgradeLeftSlots.appendChild(slot);
+            DOM.upgradeLeftSlots.appendChild(createUpgradeSlot(i));
         }
     }
     
-    // Обновляем правый слот
+    // Правый слот
     if (DOM.upgradeRightSlot) {
         DOM.upgradeRightSlot.innerHTML = '';
         
@@ -173,24 +215,19 @@ function updateUpgradeSlots() {
             const skin = gameState.upgradeSlots.right;
             DOM.upgradeRightSlot.classList.add('upg-right-slot--filled');
             
-            const emoji = createElement('span', {}, skin.emoji || '🎨');
-            const name = createElement('span', { 
-                className: 'upg-right-slot__name' 
-            }, skin.name.substring(0, 16));
-            const price = createElement('span', {
-                style: 'font-size:0.5rem;color:#f0c060;'
-            }, `${formatPrice(skin.price)} ₽`);
+            if (skin.imageUrl) {
+                DOM.upgradeRightSlot.innerHTML = `
+                    <img src="${skin.imageUrl}" style="width:50px;height:50px;border-radius:6px;" alt="${skin.name}">
+                `;
+            } else {
+                DOM.upgradeRightSlot.innerHTML = `<span style="font-size:2rem;">${skin.emoji || '🎨'}</span>`;
+            }
             
-            const removeBtn = createElement('span', {
-                className: 'upg-slot__remove',
-                onClick: (e) => {
-                    e.stopPropagation();
-                    gameState.upgradeSlots.right = null;
-                    updateUpgradeSlots();
-                }
-            }, '✕');
-            
-            DOM.upgradeRightSlot.append(emoji, name, price, removeBtn);
+            DOM.upgradeRightSlot.innerHTML += `
+                <span class="upg-right-slot__name">${skin.name.substring(0, 16)}</span>
+                <span style="font-size:0.5rem;color:#f0c060;">${formatPrice(skin.price)} ₽</span>
+                <span class="upg-slot__remove" onclick="event.stopPropagation(); gameState.upgradeSlots.right = null; updateUpgradeSlots();">✕</span>
+            `;
         } else {
             DOM.upgradeRightSlot.classList.remove('upg-right-slot--filled');
             DOM.upgradeRightSlot.innerHTML = '<span>+</span>';
@@ -201,69 +238,15 @@ function updateUpgradeSlots() {
     updateChanceDisplay();
 }
 
-/**
- * Клик по левому слоту
- */
 function onLeftSlotClick(index) {
     const slotData = gameState.upgradeSlots.left[index];
     
-    // Если слот заполнен — очищаем
     if (slotData) {
         removeFromLeftSlot(index);
         return;
     }
     
-    // Показываем модалку выбора предмета
-    showInventoryPicker((item) => {
-        // Добавляем в слот
-        gameState.upgradeSlots.left[index] = {
-            instanceId: item.instanceId,
-            skinId: item.skinId
-        };
-        gameState.upgradeSlots.reservedIds.add(item.instanceId);
-        
-        updateUpgradeSlots();
-        renderProfilePage(); // Обновляем инвентарь в профиле
-    });
-}
-
-/**
- * Удаляет предмет из левого слота
- */
-function removeFromLeftSlot(index) {
-    const slotData = gameState.upgradeSlots.left[index];
-    if (slotData) {
-        gameState.upgradeSlots.reservedIds.delete(slotData.instanceId);
-        gameState.upgradeSlots.left[index] = null;
-        updateUpgradeSlots();
-        renderProfilePage();
-    }
-}
-
-/**
- * Клик по правому слоту
- */
-function onRightSlotClick() {
-    // Если слот заполнен — очищаем
-    if (gameState.upgradeSlots.right) {
-        gameState.upgradeSlots.right = null;
-        updateUpgradeSlots();
-        return;
-    }
-    
-    // Показываем модалку со всеми скинами
-    showAllSkinsPicker((skin) => {
-        gameState.upgradeSlots.right = skin;
-        updateUpgradeSlots();
-    });
-}
-
-// ===== МОДАЛКИ ВЫБОРА =====
-
-/**
- * Показывает модалку выбора из инвентаря
- */
-function showInventoryPicker(callback) {
+    // Показываем модалку выбора из инвентаря
     const availableItems = getAvailableInventory();
     
     if (availableItems.length === 0) {
@@ -281,15 +264,25 @@ function showInventoryPicker(callback) {
             className: 'modal__item',
             style: `border-left:3px solid ${skin.color}`,
             onClick: () => {
-                callback(item);
+                gameState.upgradeSlots.left[index] = {
+                    instanceId: item.instanceId,
+                    skinId: item.skinId
+                };
+                gameState.upgradeSlots.reservedIds.add(item.instanceId);
                 closeAllModals();
+                updateUpgradeSlots();
+                if (gameState.currentTab === 'profile') renderProfilePage();
             }
         },
-            createElement('span', { className: 'modal__item-emoji' }, skin.emoji || '🎨'),
+            createElement('span', { className: 'modal__item-emoji' }, 
+                skin.imageUrl ? 
+                `<img src="${skin.imageUrl}" style="width:30px;height:30px;">` : 
+                skin.emoji || '🎨'
+            ),
             createElement('span', {}, skin.name.substring(0, 14)),
-            createElement('span', { 
-                style: 'color:#f0c060;font-size:0.6rem;' 
-            }, `${formatPrice(skin.price)} ₽`)
+            createElement('span', { style: 'color:#f0c060;font-size:0.6rem;' }, 
+                `${formatPrice(skin.price)} ₽`
+            )
         );
         
         grid.appendChild(itemEl);
@@ -298,10 +291,24 @@ function showInventoryPicker(callback) {
     showModal('🎒 Выберите предмет для жертвы', grid);
 }
 
-/**
- * Показывает модалку со всеми скинами из базы
- */
-function showAllSkinsPicker(callback) {
+function removeFromLeftSlot(index) {
+    const slotData = gameState.upgradeSlots.left[index];
+    if (slotData) {
+        gameState.upgradeSlots.reservedIds.delete(slotData.instanceId);
+        gameState.upgradeSlots.left[index] = null;
+        updateUpgradeSlots();
+        if (gameState.currentTab === 'profile') renderProfilePage();
+    }
+}
+
+function onRightSlotClick() {
+    if (gameState.upgradeSlots.right) {
+        gameState.upgradeSlots.right = null;
+        updateUpgradeSlots();
+        return;
+    }
+    
+    // Показываем все скины из базы
     const grid = createElement('div', { className: 'modal__grid' });
     
     SKINS_DATABASE.forEach(skin => {
@@ -309,18 +316,23 @@ function showAllSkinsPicker(callback) {
             className: 'modal__item',
             style: `border-left:3px solid ${skin.color}`,
             onClick: () => {
-                callback(skin);
+                gameState.upgradeSlots.right = skin;
                 closeAllModals();
+                updateUpgradeSlots();
             }
         },
-            createElement('span', { className: 'modal__item-emoji' }, skin.emoji || '🎨'),
+            createElement('span', { className: 'modal__item-emoji' },
+                skin.imageUrl ?
+                `<img src="${skin.imageUrl}" style="width:30px;height:30px;">` :
+                skin.emoji || '🎨'
+            ),
             createElement('span', {}, skin.name.substring(0, 14)),
-            createElement('span', { 
-                style: 'color:#f0c060;font-size:0.6rem;' 
-            }, `${formatPrice(skin.price)} ₽`),
-            createElement('span', {
-                style: `font-size:0.5rem;color:${skin.color};`
-            }, skin.rarity)
+            createElement('span', { style: 'color:#f0c060;font-size:0.6rem;' },
+                `${formatPrice(skin.price)} ₽`
+            ),
+            createElement('span', { style: `font-size:0.5rem;color:${skin.color};` },
+                skin.rarity
+            )
         );
         
         grid.appendChild(itemEl);
@@ -329,11 +341,8 @@ function showAllSkinsPicker(callback) {
     showModal('🎯 Выберите желаемый предмет', grid);
 }
 
-// ===== РАСЧЁТ ШАНСА =====
+// ===== ОБНОВЛЕНИЕ ШАНСА =====
 
-/**
- * Обновляет отображение шанса на колесе
- */
 function updateChanceDisplay() {
     const leftSum = gameState.upgradeSlots.left
         .filter(s => s !== null)
@@ -344,62 +353,73 @@ function updateChanceDisplay() {
     
     const rightPrice = gameState.upgradeSlots.right ? gameState.upgradeSlots.right.price : 0;
     
-    const arrow = DOM.chanceArrow;
-    const text = DOM.chanceText;
-    const red = DOM.chanceRed;
-    const green = DOM.chanceGreen;
+    const redCircle = DOM.chanceRed;
+    const greenCircle = DOM.chanceGreen;
+    const textEl = DOM.chanceText;
     const button = DOM.upgradeStartBtn;
     
-    if (!arrow || !text || !red || !green || !button) return;
+    if (!redCircle || !greenCircle || !textEl || !button) return;
     
     // Если не выбраны предметы
     if (leftSum <= 0 || rightPrice <= 0) {
-        text.textContent = '—%';
-        arrow.style.transform = 'translate(-50%,-100%) rotate(0deg)';
-        red.setAttribute('stroke-dasharray', `0 ${CIRCUMFERENCE}`);
-        green.setAttribute('stroke-dasharray', `0 ${CIRCUMFERENCE}`);
+        textEl.textContent = '—%';
+        resetArrow();
+        redCircle.setAttribute('stroke-dasharray', `0 ${CIRCUMFERENCE}`);
+        greenCircle.setAttribute('stroke-dasharray', `${CIRCUMFERENCE} ${CIRCUMFERENCE}`);
+        greenCircle.setAttribute('stroke-dashoffset', '0');
         button.disabled = true;
         return;
     }
     
     // Рассчитываем шанс
     let chance = (leftSum / rightPrice) * 0.9;
-    chance = Math.min(chance, 0.95); // Максимум 95%
-    chance = Math.max(chance, 0.01);  // Минимум 1%
+    chance = Math.min(chance, 0.95);
+    chance = Math.max(chance, 0.01);
     
     const percent = Math.round(chance * 100);
+    textEl.textContent = `${percent}%`;
     
-    // Обновляем текст
-    text.textContent = `${percent}%`;
-    
-    // Обновляем круги
+    // Красная зона (провал) - всегда видна
     const redLength = chance * CIRCUMFERENCE;
     const greenLength = CIRCUMFERENCE - redLength;
     
-    red.setAttribute('stroke-dasharray', `${redLength} ${CIRCUMFERENCE}`);
-    green.setAttribute('stroke-dasharray', `${greenLength} ${CIRCUMFERENCE}`);
-    green.setAttribute('stroke-dashoffset', `-${redLength}`);
+    redCircle.setAttribute('stroke-dasharray', `${redLength} ${CIRCUMFERENCE}`);
+    greenCircle.setAttribute('stroke-dasharray', `${greenLength} ${CIRCUMFERENCE}`);
+    greenCircle.setAttribute('stroke-dashoffset', `-${redLength}`);
     
     // Поворачиваем стрелку на границу красного
     const angle = chance * 360;
-    arrow.style.transition = 'transform 0.3s ease';
-    arrow.style.transform = `translate(-50%,-100%) rotate(${angle}deg)`;
+    updateArrowRotation(angle, 0.3);
     
     // Активируем кнопку
     const hasLeft = gameState.upgradeSlots.left.some(s => s !== null);
     button.disabled = !(hasLeft && gameState.upgradeSlots.right);
 }
 
+function resetArrow() {
+    updateArrowRotation(0, 0.3);
+}
+
+function updateArrowRotation(angle, duration = 0.3) {
+    // Обновляем PNG стрелку
+    if (DOM.chanceArrow && DOM.chanceArrow.style.display !== 'none') {
+        DOM.chanceArrow.style.transition = `transform ${duration}s ease`;
+        DOM.chanceArrow.style.transform = `translate(-50%, -100%) rotate(${angle}deg)`;
+    }
+    
+    // Обновляем fallback стрелку
+    if (DOM.chanceArrowFallback && DOM.chanceArrowFallback.style.display !== 'none') {
+        DOM.chanceArrowFallback.style.transition = `transform ${duration}s ease`;
+        DOM.chanceArrowFallback.style.transform = `translate(-50%, -100%) rotate(${angle}deg)`;
+    }
+}
+
 // ===== ЗАПУСК АПГРЕЙДА =====
 
-/**
- * Запускает процесс апгрейда
- */
 function startUpgrade() {
     const button = DOM.upgradeStartBtn;
     if (!button || button.disabled) return;
     
-    // Собираем левые предметы
     const leftItems = gameState.upgradeSlots.left.filter(s => s !== null);
     const rightSkin = gameState.upgradeSlots.right;
     
@@ -419,51 +439,51 @@ function startUpgrade() {
     const roll = Math.random();
     const success = roll < chance;
     
-    // Удаляем левые предметы из инвентаря
+    // Удаляем левые предметы
     const idsToRemove = new Set(leftItems.map(s => s.instanceId));
     gameState.inventory = gameState.inventory.filter(item => !idsToRemove.has(item.instanceId));
+    idsToRemove.forEach(id => gameState.upgradeSlots.reservedIds.delete(id));
     
     // Очищаем слоты
-    idsToRemove.forEach(id => gameState.upgradeSlots.reservedIds.delete(id));
     gameState.upgradeSlots.left = [null, null, null, null, null, null];
     gameState.upgradeSlots.right = null;
     
-    // Обновляем статистику
+    // Статистика
     gameState.stats.upgradesDone++;
     gameState.stats.totalSpent += leftSum;
     
-    // Сохраняем
     saveState();
     updateBalanceDisplay();
     updateUpgradeSlots();
     
-    // Анимация вращения стрелки
-    const arrow = DOM.chanceArrow;
-    const spins = 4 + Math.random() * 4; // 4-8 полных оборотов
+    // === АНИМАЦИЯ ===
+    
+    // Блокируем кнопку
+    button.disabled = true;
+    
+    // Подсвечиваем слоты
+    document.querySelectorAll('.upg-slot, .upg-right-slot').forEach(s => {
+        s.classList.add('upg-spinning');
+    });
+    
+    // Запускаем вращение стрелки
+    const totalSpins = 5 + Math.random() * 3; // 5-8 полных оборотов
     const targetAngle = success ? 
         (chance * 360) : 
         (chance * 360 + (0.05 + Math.random() * 0.1) * 360);
-    const totalAngle = spins * 360 + targetAngle;
+    const totalRotation = totalSpins * 360 + targetAngle;
     
-    // Запускаем анимацию
-    arrow.style.transition = 'transform 4s cubic-bezier(0.12, 0.85, 0.25, 1)';
-    arrow.style.transform = `translate(-50%,-100%) rotate(${totalAngle}deg)`;
+    updateArrowRotation(totalRotation, 4); // 4 секунды анимации
     
-    // Подсвечиваем слоты
-    document.querySelectorAll('.upg-slot, .upg-right-slot').forEach(slot => {
-        slot.classList.add('upg-spinning');
-    });
-    
-    // Ждём окончания анимации
+    // Ждём завершения
     setTimeout(() => {
         // Убираем подсветку
-        document.querySelectorAll('.upg-slot, .upg-right-slot').forEach(slot => {
-            slot.classList.remove('upg-spinning');
+        document.querySelectorAll('.upg-slot, .upg-right-slot').forEach(s => {
+            s.classList.remove('upg-spinning');
         });
         
-        // Финальная позиция стрелки
-        arrow.style.transition = 'transform 0.5s ease';
-        arrow.style.transform = `translate(-50%,-100%) rotate(${targetAngle}deg)`;
+        // Финальная позиция
+        updateArrowRotation(targetAngle % 360, 0.5);
         
         if (success) {
             // Успех!
@@ -474,20 +494,12 @@ function startUpgrade() {
             }
             gameState.stats.upgradesSuccess = (gameState.stats.upgradesSuccess || 0) + 1;
             
-            saveState();
-            updateBalanceDisplay();
-            
             launchUpgradeConfetti();
             playSuccessSound();
-            addHistory('⬆️ Апгрейд успешен', `${leftItems.length} предметов → ${rightSkin.name}`);
-            
+            addHistory('⬆️ Успешный апгрейд', `${leftItems.length} предметов → ${rightSkin.name}`);
             showUpgradeResult(true, rightSkin, chance);
         } else {
             // Провал
-            saveState();
-            updateBalanceDisplay();
-            
-            // Красная вспышка
             document.body.style.transition = 'background 0.2s';
             document.body.style.background = 'rgba(200,30,30,0.2)';
             setTimeout(() => {
@@ -497,18 +509,18 @@ function startUpgrade() {
             
             playFailSound();
             addHistory('💔 Апгрейд провален', `${leftItems.length} предметов сгорели`);
-            
             showUpgradeResult(false, rightSkin, chance);
         }
         
-        // Обновляем интерфейс
-        renderProfilePage();
+        saveState();
+        updateBalanceDisplay();
+        if (gameState.currentTab === 'profile') renderProfilePage();
+        
     }, 4000);
 }
 
-/**
- * Показывает результат апгрейда
- */
+// ===== ПОКАЗ РЕЗУЛЬТАТА =====
+
 function showUpgradeResult(success, skin, chance) {
     const overlay = DOM.upgradeResultOverlay;
     const box = DOM.upgradeResultBox;
@@ -529,7 +541,7 @@ function showUpgradeResult(success, skin, chance) {
             <p style="color:#fff;font-weight:700;">${skin.name}</p>
             <p style="color:#f0c060;">${formatPrice(skin.price)} ₽</p>
             <p style="color:#888;">Шанс был: ${percent}%</p>
-            <button class="btn btn--purple" id="btnCloseResult">✅ Отлично</button>
+            <button class="btn btn--purple" id="btnCloseUpgResult">✅ Отлично</button>
         `;
     } else {
         box.classList.add('upgrade-result-box--fail');
@@ -538,14 +550,13 @@ function showUpgradeResult(success, skin, chance) {
             <h3 style="color:#e05555;">Апгрейд провален</h3>
             <p style="color:#faa;">Предметы сгорели</p>
             <p style="color:#888;">Шанс был: ${percent}%</p>
-            <p style="color:#aaa;font-size:0.8rem;">Желаемый: ${skin.name}</p>
-            <button class="btn btn--outline" id="btnCloseResult">😞 Понятно</button>
+            <p style="color:#aaa;font-size:0.8rem;">Цель: ${skin.name}</p>
+            <button class="btn btn--outline" id="btnCloseUpgResult">😞 Понятно</button>
         `;
     }
     
-    // Закрытие по кнопке
     setTimeout(() => {
-        const closeBtn = $('#btnCloseResult');
+        const closeBtn = document.getElementById('btnCloseUpgResult');
         if (closeBtn) {
             closeBtn.addEventListener('click', () => {
                 overlay.classList.remove('upgrade-result-overlay--visible');
@@ -553,7 +564,6 @@ function showUpgradeResult(success, skin, chance) {
         }
     }, 100);
     
-    // Автозакрытие через 5 секунд
     setTimeout(() => {
         if (overlay.classList.contains('upgrade-result-overlay--visible')) {
             overlay.classList.remove('upgrade-result-overlay--visible');
@@ -561,10 +571,9 @@ function showUpgradeResult(success, skin, chance) {
     }, 5000);
 }
 
-// Закрытие оверлея по клику на фон
 document.addEventListener('click', (e) => {
     if (e.target === DOM.upgradeResultOverlay) {
-        DOM.upgradeResultOverlay.classList.remove('upgrade-result-overlay--visible');
+        DOM.upgradeResultOverlay?.classList.remove('upgrade-result-overlay--visible');
     }
 });
 
@@ -573,3 +582,4 @@ window.renderUpgradePage = renderUpgradePage;
 window.updateUpgradeSlots = updateUpgradeSlots;
 window.updateChanceDisplay = updateChanceDisplay;
 window.startUpgrade = startUpgrade;
+window.updateArrowRotation = updateArrowRotation;
