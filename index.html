@@ -1,0 +1,69 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta name="description" content="ShushaCase — Симулятор открытия кейсов CS2. Открывай кейсы, улучшай скины, собирай коллекцию!">
+    <meta name="theme-color" content="#0a0a0f">
+    <title>ShushaCase — Открытие кейсов CS2</title>
+    <link rel="stylesheet" href="css/style.css">
+    <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>📦</text></svg>">
+</head>
+<body>
+    <!-- Основное приложение -->
+    <div class="app" id="app">
+        <!-- Хедер -->
+        <header class="header">
+            <div class="header__logo">
+                <div class="header__logo-icon">S</div>
+                <span>ShushaCase</span>
+            </div>
+            <div class="header__balance">
+                <span>💰</span>
+                <span id="balanceValue">10 000</span>
+                <span>₽</span>
+            </div>
+            <button class="header__steam-btn" id="steamButton">
+                🔐 Войти через Steam
+            </button>
+        </header>
+
+        <!-- Навигация -->
+        <nav class="nav-tabs" id="navTabs">
+            <button class="nav-tab nav-tab--active" data-tab="cases">
+                📦 Кейсы
+            </button>
+            <button class="nav-tab" data-tab="upgrade">
+                ⬆️ Апгрейд
+            </button>
+            <button class="nav-tab" data-tab="profile">
+                👤 Профиль и инвентарь
+            </button>
+        </nav>
+
+        <!-- Контентные секции -->
+        <div class="content content--active" id="contentCases"></div>
+        <div class="content" id="contentCaseDetail"></div>
+        <div class="content" id="contentUpgrade"></div>
+        <div class="content" id="contentProfile"></div>
+    </div>
+
+    <!-- Оверлей результата апгрейда -->
+    <div class="upgrade-result-overlay" id="upgradeResultOverlay">
+        <div class="upgrade-result-box" id="upgradeResultBox"></div>
+    </div>
+
+    <!-- Канвас для конфетти -->
+    <canvas id="confettiCanvas"></canvas>
+
+    <!-- Подключение скриптов -->
+    <script src="js/data.js"></script>
+    <script src="js/state.js"></script>
+    <script src="js/audio.js"></script>
+    <script src="js/confetti.js"></script>
+    <script src="js/ui.js"></script>
+    <script src="js/cases.js"></script>
+    <script src="js/upgrade.js"></script>
+    <script src="js/app.js"></script>
+</body>
+</html>
